@@ -467,20 +467,19 @@ function checkAlarms() {
       firedAlarms.add(i); playChime();
       const n = blocks.slice(0,i).filter(x=>x.type==='alarm').length + 1;
       showBanner(L.alarmBanner(n, fmt(blockEnd(i))));
-      const el = document.querySelector(`[data-idx="${i}"]`);
-      if (el) { el.classList.add('firing'); setTimeout(() => el.classList.remove('firing'), 700); }
-      renderTimeline();
     }
   });
-  updateProgress();
+  renderTimeline();
 }
 function updateProgress() {
   blocks.forEach((b,i) => {
     const start = blockStart(i), end = blockEnd(i);
-    if (elapsed >= start && elapsed < end) {
-      const pct = Math.min(100, ((elapsed-start)/b.seconds)*100);
-      const bar = document.querySelector(`[data-idx="${i}"] .progress-bar`);
-      if (bar) bar.style.width = pct + '%';
+    const bar = document.querySelector(`[data-idx="${i}"] .progress-bar`);
+    if (!bar) return;
+    if (b.type === 'gap' && elapsed >= start && elapsed < end) {
+      bar.style.width = Math.min(100, ((elapsed - start) / b.seconds) * 100) + '%';
+    } else if (b.type === 'alarm' && elapsed >= end) {
+      bar.style.width = '0%';
     }
   });
 }
@@ -700,18 +699,23 @@ function renderTimeline() {
   blocks.forEach((b,i) => {
     const start = blockStart(i), end = blockEnd(i);
     const isAlarm = b.type==='alarm';
-    const fired = isAlarm && firedAlarms.has(i);
-    const isActive = elapsed>=start && elapsed<end;
+    const fired = isAlarm ? firedAlarms.has(i) : (running || elapsed > 0) && elapsed >= end;
+    // Alarms are active for 1s when they fire; intervals are active while running through them
+    const isActive = !fired && elapsed >= start && elapsed < end;
     const isEd = editingIdx===i;
-    const pct = isActive && running ? Math.min(100,((elapsed-start)/b.seconds)*100) : 0;
+    const pct = (!isAlarm && isActive && running) ? Math.min(100,((elapsed-start)/b.seconds)*100) : 0;
     if (isAlarm) alarmCount++;
     const blockCls = `block block-${b.type}${fired?' fired':''}${isActive?' active-next':''}`;
     const badgeCls = `block-badge badge-${b.type}`;
-    const badgeIcon = isAlarm ? (fired?'✓':'◎') : '⟳';
+    const badgeIcon = isAlarm ? (fired?'✓':'◎') : (fired?'✓':'⟳');
     const typeLabel = isAlarm ? L.blockAlarm(alarmCount) : L.blockGap;
+    // Display: own duration + cumulative mark
+    const ownTime = fmt(b.seconds);
+    const cumulMark = fmt(end);
+    let mainTime = isAlarm ? `${ownTime} <span style="font-size:11px;opacity:0.45;font-weight:300">→ ${cumulMark}</span>` : fmtDur(b.seconds);
     let sub = '';
-    if (isAlarm) sub = fired ? L.completed : (running&&isActive ? L.remaining(fmt(end-elapsed)) : L.at(fmt(end)));
-    else sub = running&&isActive ? L.remaining(fmt(end-elapsed)) : fmtDur(b.seconds);
+    if (isAlarm) sub = fired ? L.completed : (running&&isActive ? L.remaining(fmt(end-elapsed)) : L.at(cumulMark));
+    else sub = fired ? L.completed : (running&&isActive ? L.remaining(fmt(end-elapsed)) : `${L.at(cumulMark)}`);
     const em = Math.floor(b.seconds/60), es = b.seconds%60;
     if (i>0) html += `<div class="connector"></div>`;
     html += `<div class="${blockCls}" data-idx="${i}">
@@ -719,7 +723,7 @@ function renderTimeline() {
         <div class="${badgeCls}">${badgeIcon}</div>
         <div class="block-info">
           <div class="block-type">${typeLabel}</div>
-          <div class="block-time">${isAlarm ? fmt(end) : fmtDur(b.seconds)}</div>
+          <div class="block-time">${mainTime}</div>
           <div class="block-sub">${sub}</div>
         </div>
         <div class="block-actions">
@@ -738,7 +742,7 @@ function renderTimeline() {
         <button class="btn-save" onclick="saveEdit(${i})">${L.saveBtn}</button>
         <button class="btn-cancel-edit" onclick="toggleEdit(${i})">${L.cancel}</button>
       </div>
-      ${isActive?`<div class="progress-bar" style="width:${pct}%"></div>`:''}
+      ${(!isAlarm && isActive) ? `<div class="progress-bar" style="width:${pct}%"></div>` : ''}
     </div>`;
   });
   const total = blocks.reduce((s,b)=>s+b.seconds,0);
