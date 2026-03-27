@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0a0a">
+<title>Stopwatch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --bg: #0a0a0a; --surface: #141414; --surface2: #1e1e1e;
+    --border: rgba(255,255,255,0.08); --border2: rgba(255,255,255,0.14);
+    --text: #f0ede8; --muted: rgba(240,237,232,0.45); --dim: rgba(240,237,232,0.22);
+    --accent: #c8f04a; --accent-dim: rgba(200,240,74,0.12); --accent-border: rgba(200,240,74,0.35);
+    --blue: #7eb8f7; --blue-dim: rgba(126,184,247,0.1); --blue-border: rgba(126,184,247,0.3);
+    --orange: #f7a55a; --orange-dim: rgba(247,165,90,0.1); --orange-border: rgba(247,165,90,0.3);
+    --danger: #ff6b6b; --danger-dim: rgba(255,107,107,0.1);
+    --radius: 16px; --radius-sm: 10px;
+  }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 16px; line-height: 1.5; overflow-x: hidden; }
+  .app { min-height: 100dvh; display: flex; flex-direction: column; padding: env(safe-area-inset-top,16px) 20px env(safe-area-inset-bottom,24px); max-width: 480px; margin: 0 auto; }
+
+  .header { padding: 20px 0 8px; display: flex; align-items: center; gap: 8px; }
+  .header h1 { font-weight: 300; font-size: 15px; color: var(--muted); letter-spacing: 0.08em; text-transform: lowercase; flex: 1; }
+  .header-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+  .header-dot.running { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.6)} }
+  .btn-lang { background: none; border: 0.5px solid var(--border2); border-radius: 8px; color: var(--dim); font-size: 11px; font-weight: 500; padding: 4px 8px; cursor: pointer; font-family: 'DM Mono', sans-serif; letter-spacing: 0.06em; transition: color 0.15s, border-color 0.15s; }
+  .btn-lang:active { color: var(--text); border-color: var(--border2); background: var(--surface2); }
+  .btn-configs { background: none; border: 0.5px solid var(--border2); border-radius: 8px; color: var(--muted); font-size: 12px; padding: 5px 10px; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; }
+  .btn-configs:active { background: var(--surface2); }
+
+  .timer-section { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; padding: 22px 0 18px; }
+  .timer-display { font-family: 'DM Mono', monospace; font-weight: 300; font-size: clamp(52px,16vw,72px); letter-spacing: -0.02em; color: var(--text); transition: color 0.3s; line-height: 1; }
+  .timer-display.running { color: var(--accent); }
+  .timer-ms { font-family: 'DM Mono', monospace; font-size: 18px; font-weight: 300; color: var(--dim); margin-top: 4px; letter-spacing: 0.05em; }
+  .timer-status { font-size: 12px; color: var(--dim); margin-top: 10px; letter-spacing: 0.12em; text-transform: lowercase; min-height: 16px; }
+
+  .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 22px; }
+  .btn { height: 52px; border: 0.5px solid var(--border2); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px; cursor: pointer; transition: background 0.15s, transform 0.1s; -webkit-user-select: none; user-select: none; }
+  .btn:active { transform: scale(0.97); background: var(--surface2); }
+  .btn.primary { background: var(--accent); color: #0a0a0a; border-color: var(--accent); font-weight: 500; }
+  .btn.primary:active { background: #b4d63a; }
+  .btn.reset { color: var(--muted); }
+
+  .alert-banner { display: none; padding: 12px 16px; border-radius: var(--radius-sm); background: var(--accent-dim); border: 0.5px solid var(--accent-border); color: var(--accent); font-size: 14px; font-weight: 500; text-align: center; margin-bottom: 14px; animation: slideIn 0.15s ease; }
+  @keyframes slideIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
+
+  .section-label { font-size: 11px; font-weight: 500; color: var(--dim); letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 10px; }
+  .add-bar { display: flex; gap: 8px; margin-bottom: 18px; }
+  .add-btn { flex: 1; height: 40px; border-radius: var(--radius-sm); font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.15s; }
+  .add-btn.alarm { background: var(--accent-dim); border: 0.5px solid var(--accent-border); color: var(--accent); }
+  .add-btn.alarm:active { background: rgba(200,240,74,0.22); }
+  .add-btn.gap { background: var(--blue-dim); border: 0.5px solid var(--blue-border); color: var(--blue); }
+  .add-btn.gap:active { background: rgba(126,184,247,0.2); }
+  .add-btn.clear { background: var(--danger-dim); border: 0.5px solid rgba(255,107,107,0.3); color: var(--danger); flex: 0 0 auto; padding: 0 14px; }
+  .add-btn.clear:active { background: rgba(255,107,107,0.2); }
+  .add-btn.clear:disabled { opacity: 0.25; cursor: default; }
+
+  .timeline { display: flex; flex-direction: column; flex: 1; padding-bottom: 16px; }
+  .empty { text-align: center; padding: 28px 0; color: var(--dim); font-size: 13px; border: 0.5px dashed var(--border); border-radius: var(--radius); }
+  .connector { display: flex; align-items: center; justify-content: center; height: 16px; position: relative; }
+  .connector::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:1px; background:var(--border2); transform:translateX(-50%); }
+
+  .block { border-radius: var(--radius-sm); position: relative; overflow: hidden; transition: opacity 0.2s; }
+  .block.fired { opacity: 0.38; }
+  .block.firing { animation: flash 0.6s ease; }
+  @keyframes flash { 0%,100%{} 30%{filter:brightness(1.6)} }
+  .block-alarm { background: var(--surface); border: 0.5px solid var(--border); }
+  .block-alarm.active-next { border-color: var(--accent-border); background: var(--accent-dim); }
+  .block-alarm.active-next::before { content:''; position:absolute; left:0;top:0;bottom:0; width:3px; background:var(--accent); border-radius:3px 0 0 3px; }
+  .block-gap { background: var(--surface); border: 0.5px solid var(--border); }
+  .block-gap.active-next { border-color: var(--blue-border); background: var(--blue-dim); }
+  .block-gap.active-next::before { content:''; position:absolute; left:0;top:0;bottom:0; width:3px; background:var(--blue); border-radius:3px 0 0 3px; }
+
+  .block-view { display: flex; align-items: center; gap: 10px; padding: 11px 12px 11px 14px; }
+  .block-badge { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+  .badge-alarm { background: var(--accent-dim); border: 0.5px solid var(--accent-border); color: var(--accent); }
+  .badge-gap { background: var(--blue-dim); border: 0.5px solid var(--blue-border); color: var(--blue); }
+  .block-info { flex: 1; min-width: 0; }
+  .block-type { font-size: 10px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 1px; }
+  .block-alarm .block-type { color: var(--accent); opacity: 0.7; }
+  .block-gap .block-type { color: var(--blue); opacity: 0.7; }
+  .block-time { font-family: 'DM Mono', monospace; font-size: 15px; font-weight: 400; color: var(--text); line-height: 1.2; }
+  .block-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .block-alarm.active-next .block-sub { color: var(--accent); opacity: 0.8; }
+  .block-gap.active-next .block-sub { color: var(--blue); opacity: 0.8; }
+  .block-actions { display: flex; gap: 2px; flex-shrink: 0; }
+  .btn-icon { background: none; border: none; cursor: pointer; color: var(--dim); font-size: 15px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 7px; transition: background 0.15s, color 0.15s; }
+  .btn-icon.edit:active { background: var(--accent-dim); color: var(--accent); }
+  .btn-icon.del:active { background: var(--danger-dim); color: var(--danger); }
+
+  .block-edit { display: none; align-items: center; gap: 8px; padding: 8px 12px 12px 52px; border-top: 0.5px solid var(--border); flex-wrap: wrap; }
+  .block-edit.open { display: flex; }
+  .block-edit-label { font-size: 12px; color: var(--dim); flex: 1; min-width: 60px; }
+  .t-group { display: flex; align-items: center; gap: 4px; }
+  .t-group input { width: 48px; height: 34px; background: var(--surface2); border: 0.5px solid var(--border2); border-radius: 8px; color: var(--text); font-family: 'DM Mono', monospace; font-size: 14px; text-align: center; padding: 0 2px; -webkit-appearance: none; }
+  .t-group input:focus { outline: none; border-color: rgba(200,240,74,0.4); }
+  .t-group span { font-size: 11px; color: var(--dim); min-width: 18px; }
+  .btn-save { height: 32px; padding: 0 12px; background: var(--accent-dim); border: 0.5px solid var(--accent-border); border-radius: 8px; color: var(--accent); font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; cursor: pointer; }
+  .btn-save:active { background: rgba(200,240,74,0.22); }
+  .btn-cancel-edit { height: 32px; padding: 0 10px; background: none; border: 0.5px solid var(--border2); border-radius: 8px; color: var(--muted); font-family: 'DM Sans', sans-serif; font-size: 12px; cursor: pointer; }
+
+  .progress-bar { position: absolute; bottom: 0; left: 0; height: 2px; background: var(--accent); transition: width 1s linear; opacity: 0.6; }
+  .block-gap.active-next .progress-bar { background: var(--blue); }
+  .total-line { text-align: center; padding: 12px 0 4px; font-size: 11px; color: var(--dim); letter-spacing: 0.08em; }
+
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.72); z-index: 100; align-items: flex-end; justify-content: center; padding-bottom: env(safe-area-inset-bottom,0); }
+  .modal-overlay.open { display: flex; animation: fadeIn 0.12s ease; }
+  @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+  .modal { background: var(--surface); border: 0.5px solid var(--border2); border-radius: var(--radius) var(--radius) 0 0; padding: 20px 20px 28px; width: 100%; max-width: 480px; animation: slideUp 0.18s ease; }
+  @keyframes slideUp { from{transform:translateY(16px);opacity:0} to{transform:translateY(0);opacity:1} }
+  .modal-title { font-size: 14px; font-weight: 500; margin-bottom: 16px; }
+  .modal-title.alarm { color: var(--accent); }
+  .modal-title.gap { color: var(--blue); }
+  .modal-title.save { color: var(--orange); }
+  .modal-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .modal-label { font-size: 13px; color: var(--muted); flex: 1; min-width: 60px; }
+  .modal .t-group input { width: 56px; height: 42px; font-size: 18px; }
+  .modal .t-group span { font-size: 13px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .modal-add { flex: 1; height: 46px; border-radius: var(--radius-sm); font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 500; cursor: pointer; border: none; }
+  .modal-add.alarm { background: var(--accent); color: #0a0a0a; }
+  .modal-add.alarm:active { background: #b4d63a; }
+  .modal-add.gap { background: var(--blue); color: #0a0a0a; }
+  .modal-add.gap:active { background: #9ecdf9; }
+  .modal-add.save { background: var(--orange); color: #0a0a0a; }
+  .modal-add.save:active { background: #f5915e; }
+  .modal-cancel { height: 46px; padding: 0 18px; background: none; border: 0.5px solid var(--border2); border-radius: var(--radius-sm); color: var(--muted); font-family: 'DM Sans', sans-serif; font-size: 14px; cursor: pointer; }
+  .modal-input-text { width: 100%; height: 42px; background: var(--surface2); border: 0.5px solid var(--border2); border-radius: var(--radius-sm); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 15px; padding: 0 12px; }
+  .modal-input-text:focus { outline: none; border-color: rgba(247,165,90,0.5); }
+
+  .configs-panel { background: var(--surface); border: 0.5px solid var(--border2); border-radius: var(--radius) var(--radius) 0 0; padding: 20px 20px 28px; width: 100%; max-width: 480px; animation: slideUp 0.18s ease; max-height: 80dvh; display: flex; flex-direction: column; }
+  .configs-header { display: flex; align-items: center; margin-bottom: 16px; }
+  .configs-header h2 { font-size: 14px; font-weight: 500; color: var(--orange); flex: 1; }
+  .btn-close-configs { background: none; border: none; color: var(--dim); font-size: 20px; cursor: pointer; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 6px; }
+  .configs-list { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .config-item { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--surface2); border: 0.5px solid var(--border); border-radius: var(--radius-sm); transition: border-color 0.15s; }
+  .config-item:active { border-color: var(--orange-border); background: var(--orange-dim); }
+  .config-item-info { flex: 1; min-width: 0; cursor: pointer; }
+  .config-item-name { font-size: 14px; color: var(--text); font-weight: 400; }
+  .config-item-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
+  .config-item-actions { display: flex; gap: 2px; }
+  .btn-load { height: 28px; padding: 0 10px; background: var(--orange-dim); border: 0.5px solid var(--orange-border); border-radius: 7px; color: var(--orange); font-family: 'DM Sans', sans-serif; font-size: 11px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+  .btn-load:active { background: rgba(247,165,90,0.2); }
+  .btn-del-config { background: none; border: none; cursor: pointer; color: var(--dim); font-size: 16px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 6px; }
+  .btn-del-config:active { background: var(--danger-dim); color: var(--danger); }
+  .configs-empty { text-align: center; padding: 24px 0; color: var(--dim); font-size: 13px; }
+  .btn-save-current { width: 100%; height: 44px; background: var(--orange-dim); border: 0.5px solid var(--orange-border); border-radius: var(--radius-sm); color: var(--orange); font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .btn-save-current:active { background: rgba(247,165,90,0.2); }
+  .btn-save-current:disabled { opacity: 0.35; cursor: default; }
+  .btn-export, .btn-import { flex: 1; height: 40px; background: var(--surface2); border: 0.5px solid var(--border2); border-radius: var(--radius-sm); color: var(--muted); font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; }
+  .btn-export:active, .btn-import:active { background: var(--surface); color: var(--text); }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div class="header-dot" id="headerDot"></div>
+    <h1 id="h-title">stopwatch</h1>
+    <button class="btn-lang" id="btnLang" onclick="toggleLang()">ES</button>
+    <button class="btn-configs" id="h-configs" onclick="openConfigs()">Configurations</button>
+  </div>
+
+  <div class="timer-section">
+    <div class="timer-display" id="timerDisplay">00:00:00</div>
+    <div class="timer-ms" id="timerMs">.00</div>
+    <div class="timer-status" id="timerStatus"></div>
+  </div>
+
+  <div class="controls">
+    <button class="btn primary" id="btnStart" onclick="startStop()"></button>
+    <button class="btn reset" id="btnReset" onclick="resetTimer()"></button>
+  </div>
+
+  <div class="alert-banner" id="alertBanner"></div>
+
+  <div class="section-label" id="h-sequence"></div>
+  <div class="add-bar">
+    <button class="add-btn alarm" id="btnAddAlarm" onclick="openModal('alarm')"></button>
+    <button class="add-btn gap" id="btnAddGap" onclick="openModal('gap')"></button>
+    <button class="add-btn clear" id="btnClearAll" onclick="clearAll()"></button>
+  </div>
+
+  <div class="timeline" id="timeline"></div>
+</div>
+
+<!-- Add block modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModalOutside(event)">
+  <div class="modal">
+    <div class="modal-title" id="modalTitle"></div>
+    <div class="modal-row">
+      <span class="modal-label" id="modalLabel"></span>
+      <div class="t-group">
+        <input type="number" id="modalMin" min="0" value="2" inputmode="numeric">
+        <span id="m-min"></span>
+        <input type="number" id="modalSec" min="0" max="59" value="0" inputmode="numeric">
+        <span id="m-sec"></span>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-add alarm" id="modalAddBtn" onclick="confirmModal()"></button>
+      <button class="modal-cancel" id="m-cancel" onclick="closeModal()"></button>
+    </div>
+  </div>
+</div>
+
+<!-- Save config modal -->
+<div class="modal-overlay" id="saveOverlay" onclick="closeSaveOutside(event)">
+  <div class="modal">
+    <div class="modal-title save" id="s-title"></div>
+    <div class="modal-row">
+      <span class="modal-label" id="s-name-label"></span>
+      <input type="text" class="modal-input-text" id="saveNameInput" maxlength="40">
+    </div>
+    <div class="modal-actions">
+      <button class="modal-add save" id="s-save" onclick="confirmSave()"></button>
+      <button class="modal-cancel" id="s-cancel" onclick="closeSave()"></button>
+    </div>
+  </div>
+</div>
+
+<!-- Configs panel -->
+<div class="modal-overlay" id="configsOverlay" onclick="closeConfigsOutside(event)">
+  <div class="configs-panel">
+    <div class="configs-header">
+      <h2 id="c-title"></h2>
+      <button class="btn-close-configs" onclick="closeConfigs()">×</button>
+    </div>
+    <div class="configs-list" id="configsList"></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn-export" id="c-export" onclick="exportConfigs()"></button>
+      <label class="btn-import" id="c-import" for="importInput"></label>
+      <input type="file" id="importInput" accept=".json" style="display:none" onchange="importConfigs(event)">
+    </div>
+    <button class="btn-save-current" id="btnSaveCurrent" onclick="openSave()"></button>
+  </div>
+</div>
+
+<script>
+// ── i18n ──
+const LANGS = {
+  en: {
+    title: 'stopwatch',
+    configs: 'Configurations',
+    sequence: 'sequence',
+    addAlarm: '+ Alarm',
+    addGap: '+ Interval',
+    start: 'Start', pause: 'Pause', resume: 'Resume', reset: 'Reset',
+    ready: 'ready', paused: 'paused', running: 'running',
+    min: 'min', sec: 'sec',
+    newAlarm: 'new alarm', newGap: 'new interval',
+    ringAt: 'ring at', duration: 'duration',
+    addAlarmBtn: '+ Add alarm', addGapBtn: '+ Add interval',
+    cancel: 'Cancel',
+    saveTitle: 'save configuration',
+    saveName: 'name',
+    savePlaceholder: 'e.g. training session',
+    saveBtn: 'Save',
+    cfgTitle: 'saved configurations',
+    cfgExport: '↓ Export', cfgImport: '↑ Import',
+    cfgSaveCurrent: '+ Save current sequence',
+    cfgEmpty: 'no saved configurations',
+    cfgLoad: 'Load',
+    cfgDelete: 'Delete',
+    cfgMeta: (a, t, d) => a + ' alarm' + (a!==1?'s':'') + ' · ' + t + ' total · ' + d,
+    blockAlarm: n => 'alarm ' + n,
+    blockGap: 'interval',
+    completed: 'completed',
+    remaining: s => 'remaining ' + s,
+    at: s => 'at ' + s,
+    totalDuration: t => 'total duration · ' + t,
+    noBlocks: 'no blocks — add an alarm or an interval',
+    newMark: 'new mark', newDuration: 'new duration',
+    savedBanner: n => 'Configuration «' + n + '» saved',
+    loadedBanner: n => 'Loaded: ' + n,
+    noExport: 'No configurations to export',
+    importedBanner: n => n + ' configuration' + (n!==1?'s':'') + ' imported',
+    importError: 'Import error: invalid file',
+    alarmBanner: (n, t) => 'Alarm ' + n + ' · ' + t,
+    clearAll: 'Clear all', clearConfirm: 'Clear all blocks?',
+  },
+  es: {
+    title: 'cronómetro',
+    configs: 'Configuraciones',
+    sequence: 'secuencia',
+    addAlarm: '+ Alarma',
+    addGap: '+ Intervalo',
+    start: 'Iniciar', pause: 'Pausar', resume: 'Reanudar', reset: 'Reiniciar',
+    ready: 'listo', paused: 'pausado', running: 'en marcha',
+    min: 'min', sec: 'seg',
+    newAlarm: 'nueva alarma', newGap: 'nuevo intervalo',
+    ringAt: 'sonar a los', duration: 'duración',
+    addAlarmBtn: '+ Añadir alarma', addGapBtn: '+ Añadir intervalo',
+    cancel: 'Cancelar',
+    saveTitle: 'guardar configuración',
+    saveName: 'nombre',
+    savePlaceholder: 'ej: sesión de entrenamiento',
+    saveBtn: 'Guardar',
+    cfgTitle: 'configuraciones guardadas',
+    cfgExport: '↓ Exportar', cfgImport: '↑ Importar',
+    cfgSaveCurrent: '+ Guardar secuencia actual',
+    cfgEmpty: 'sin configuraciones guardadas',
+    cfgLoad: 'Cargar',
+    cfgDelete: 'Eliminar',
+    cfgMeta: (a, t, d) => a + ' alarma' + (a!==1?'s':'') + ' · ' + t + ' total · ' + d,
+    blockAlarm: n => 'alarma ' + n,
+    blockGap: 'intervalo',
+    completed: 'completada',
+    remaining: s => 'faltan ' + s,
+    at: s => 'a las ' + s,
+    totalDuration: t => 'duración total · ' + t,
+    noBlocks: 'sin bloques — añade una alarma o un intervalo',
+    newMark: 'nueva marca', newDuration: 'nueva duración',
+    savedBanner: n => 'Configuración «' + n + '» guardada',
+    loadedBanner: n => 'Cargado: ' + n,
+    noExport: 'No hay configuraciones que exportar',
+    importedBanner: n => n + ' configuración' + (n!==1?'es':'') + ' importada' + (n!==1?'s':''),
+    importError: 'Error al importar: archivo no válido',
+    alarmBanner: (n, t) => 'Alarma ' + n + ' · ' + t,
+    clearAll: 'Borrar todo', clearConfirm: '¿Borrar todos los bloques?',
+  }
+};
+
+let lang = localStorage.getItem('stopwatch_lang') || 'en';
+const t = () => LANGS[lang];
+
+function toggleLang() {
+  lang = lang === 'en' ? 'es' : 'en';
+  localStorage.setItem('stopwatch_lang', lang);
+  applyLang();
+  renderTimeline();
+  renderConfigsList();
+}
+
+function applyLang() {
+  const L = t();
+  document.documentElement.lang = lang;
+  document.title = L.title.charAt(0).toUpperCase() + L.title.slice(1);
+  document.getElementById('h-title').textContent = L.title;
+  document.getElementById('h-configs').textContent = L.configs;
+  document.getElementById('btnLang').textContent = lang === 'en' ? 'ES' : 'EN';
+  document.getElementById('h-sequence').textContent = L.sequence;
+  document.getElementById('btnAddAlarm').textContent = L.addAlarm;
+  document.getElementById('btnAddGap').textContent = L.addGap;
+  document.getElementById('btnReset').textContent = L.reset;
+  // Timer status
+  const status = document.getElementById('timerStatus').textContent;
+  if (status) {
+    const other = lang === 'en' ? LANGS.es : LANGS.en;
+    if (status === other.ready) document.getElementById('timerStatus').textContent = L.ready;
+    else if (status === other.paused) document.getElementById('timerStatus').textContent = L.paused;
+    else if (status === other.running) document.getElementById('timerStatus').textContent = L.running;
+  }
+  // Start button
+  const startBtn = document.getElementById('btnStart');
+  const otherL = lang === 'en' ? LANGS.es : LANGS.en;
+  if (startBtn.textContent === otherL.start) startBtn.textContent = L.start;
+  else if (startBtn.textContent === otherL.pause) startBtn.textContent = L.pause;
+  else if (startBtn.textContent === otherL.resume) startBtn.textContent = L.resume;
+  document.getElementById('btnClearAll').textContent = L.clearAll;
+  document.getElementById('btnClearAll').disabled = blocks.length === 0;
+  // Modal time unit labels
+  document.querySelectorAll('#m-min, #m-sec').forEach(el => {
+    el.textContent = el.id === 'm-min' ? L.min : L.sec;
+  });
+  // Configs panel static strings
+  document.getElementById('c-title').textContent = L.cfgTitle;
+  document.getElementById('c-export').textContent = L.cfgExport;
+  document.getElementById('c-import').textContent = L.cfgImport;
+  document.getElementById('btnSaveCurrent').textContent = L.cfgSaveCurrent;
+  document.getElementById('s-title').textContent = L.saveTitle;
+  document.getElementById('s-name-label').textContent = L.saveName;
+  document.getElementById('saveNameInput').placeholder = L.savePlaceholder;
+  document.getElementById('s-save').textContent = L.saveBtn;
+  document.getElementById('s-cancel').textContent = L.cancel;
+  document.getElementById('m-cancel').textContent = L.cancel;
+}
+
+// ── Persistence ──
+const STORAGE_KEY = 'cronometro_configs';
+function loadConfigs() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch(e) { return []; }
+}
+function saveConfigs(configs) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(configs)); } catch(e) {}
+}
+
+// ── Audio ──
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function playChime() {
+  try {
+    const ctx = getAudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+    [880, 1108, 1318].forEach((freq, i) => {
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + i*0.2);
+      gain.gain.setValueAtTime(0, ctx.currentTime + i*0.2);
+      gain.gain.linearRampToValueAtTime(0.09, ctx.currentTime + i*0.2 + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i*0.2 + 0.5);
+      osc.start(ctx.currentTime + i*0.2);
+      osc.stop(ctx.currentTime + i*0.2 + 0.55);
+    });
+  } catch(e) {}
+}
+
+// ── Helpers ──
+let blocks = [], elapsed = 0, running = false;
+let rafId = null, firedAlarms = new Set();
+let startTime = null, baseElapsed = 0, msElapsed = 0;
+let editingIdx = -1, modalType = 'alarm';
+
+function fmt(s) {
+  return [Math.floor(s/3600), Math.floor((s%3600)/60), s%60].map(v => String(v).padStart(2,'0')).join(':');
+}
+function fmtDur(s) {
+  const L = t();
+  if (s < 60) return s + 's';
+  const m = Math.floor(s/60), r = s%60;
+  return m + L.min + (r ? ' ' + r + 's' : '');
+}
+function blockStart(i) { let x=0; for(let j=0;j<i;j++) x+=blocks[j].seconds; return x; }
+function blockEnd(i) { return blockStart(i) + blocks[i].seconds; }
+
+// ── Timer ──
+function startStop() {
+  const L = t();
+  if (running) {
+    running = false; cancelAnimationFrame(rafId); rafId = null;
+    baseElapsed = msElapsed; startTime = null;
+    document.getElementById('btnStart').textContent = L.resume;
+    document.getElementById('timerStatus').textContent = L.paused;
+    document.getElementById('timerDisplay').classList.remove('running');
+    document.getElementById('headerDot').classList.remove('running');
+  } else {
+    running = true; startTime = performance.now();
+    document.getElementById('btnStart').textContent = L.pause;
+    document.getElementById('timerStatus').textContent = L.running;
+    document.getElementById('timerDisplay').classList.add('running');
+    document.getElementById('headerDot').classList.add('running');
+    tick();
+  }
+}
+function tick() {
+  if (!running) return;
+  msElapsed = baseElapsed + (performance.now() - startTime);
+  const secs = Math.floor(msElapsed/1000), ms = Math.floor((msElapsed%1000)/10);
+  document.getElementById('timerDisplay').textContent = fmt(secs);
+  document.getElementById('timerMs').textContent = '.' + String(ms).padStart(2,'0');
+  if (secs !== elapsed) { elapsed = secs; checkAlarms(); }
+  rafId = requestAnimationFrame(tick);
+}
+function checkAlarms() {
+  const L = t();
+  blocks.forEach((b,i) => {
+    if (b.type==='alarm' && !firedAlarms.has(i) && elapsed >= blockEnd(i)) {
+      firedAlarms.add(i); playChime();
+      const n = blocks.slice(0,i).filter(x=>x.type==='alarm').length + 1;
+      showBanner(L.alarmBanner(n, fmt(blockEnd(i))));
+      const el = document.querySelector(`[data-idx="${i}"]`);
+      if (el) { el.classList.add('firing'); setTimeout(() => el.classList.remove('firing'), 700); }
+      renderTimeline();
+    }
+  });
+  updateProgress();
+}
+function updateProgress() {
+  blocks.forEach((b,i) => {
+    const start = blockStart(i), end = blockEnd(i);
+    if (elapsed >= start && elapsed < end) {
+      const pct = Math.min(100, ((elapsed-start)/b.seconds)*100);
+      const bar = document.querySelector(`[data-idx="${i}"] .progress-bar`);
+      if (bar) bar.style.width = pct + '%';
+    }
+  });
+}
+function showBanner(msg) {
+  const b = document.getElementById('alertBanner');
+  b.textContent = '🔔 ' + msg; b.style.display = 'block';
+  clearTimeout(b._t); b._t = setTimeout(() => b.style.display='none', 4000);
+}
+function resetTimer() {
+  const L = t();
+  running = false; if (rafId) cancelAnimationFrame(rafId); rafId = null;
+  elapsed = 0; msElapsed = 0; baseElapsed = 0; startTime = null;
+  firedAlarms = new Set(); editingIdx = -1;
+  document.getElementById('timerDisplay').textContent = '00:00:00';
+  document.getElementById('timerDisplay').classList.remove('running');
+  document.getElementById('timerMs').textContent = '.00';
+  document.getElementById('timerStatus').textContent = L.ready;
+  document.getElementById('btnStart').textContent = L.start;
+  document.getElementById('alertBanner').style.display = 'none';
+  document.getElementById('headerDot').classList.remove('running');
+  renderTimeline();
+}
+
+// ── Block modal ──
+function openModal(type) {
+  const L = t();
+  modalType = type;
+  const title = document.getElementById('modalTitle');
+  const label = document.getElementById('modalLabel');
+  const addBtn = document.getElementById('modalAddBtn');
+  if (type === 'alarm') {
+    title.textContent = L.newAlarm; title.className = 'modal-title alarm';
+    label.textContent = L.ringAt;
+    addBtn.textContent = L.addAlarmBtn; addBtn.className = 'modal-add alarm';
+    document.getElementById('modalMin').value = 2;
+    document.getElementById('modalSec').value = 0;
+  } else {
+    title.textContent = L.newGap; title.className = 'modal-title gap';
+    label.textContent = L.duration;
+    addBtn.textContent = L.addGapBtn; addBtn.className = 'modal-add gap';
+    document.getElementById('modalMin').value = 0;
+    document.getElementById('modalSec').value = 30;
+  }
+  document.getElementById('m-min').textContent = L.min;
+  document.getElementById('m-sec').textContent = L.sec;
+  document.getElementById('modalOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('modalMin').focus(), 80);
+}
+function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); }
+function closeModalOutside(e) { if (e.target===document.getElementById('modalOverlay')) closeModal(); }
+function confirmModal() {
+  const m = parseInt(document.getElementById('modalMin').value)||0;
+  const s = parseInt(document.getElementById('modalSec').value)||0;
+  const total = m*60+s;
+  if (total<=0) return;
+  blocks.push({ type: modalType, seconds: total });
+  firedAlarms = new Set(blocks.map((b,i) => (b.type==='alarm' && elapsed>=blockEnd(i)) ? i : -1).filter(x=>x>=0));
+  closeModal();
+  renderTimeline();
+}
+
+// ── Clear all ──
+function clearAll() {
+  if (!blocks.length) return;
+  if (!confirm(t().clearConfirm)) return;
+  blocks = []; firedAlarms = new Set(); editingIdx = -1;
+  resetTimer();
+}
+
+// ── Edit / Delete ──
+function removeBlock(idx) {
+  blocks.splice(idx,1);
+  if (editingIdx===idx) editingIdx=-1;
+  else if (editingIdx>idx) editingIdx--;
+  firedAlarms = new Set(blocks.map((b,i) => (b.type==='alarm' && elapsed>=blockEnd(i)) ? i : -1).filter(x=>x>=0));
+  renderTimeline();
+}
+function toggleEdit(idx) {
+  editingIdx = editingIdx===idx ? -1 : idx;
+  renderTimeline();
+  if (editingIdx===idx) setTimeout(() => {
+    const inp = document.querySelector(`[data-idx="${idx}"] .block-edit input`);
+    if (inp) inp.focus();
+  }, 30);
+}
+function saveEdit(idx) {
+  const el = document.querySelector(`[data-idx="${idx}"] .block-edit`);
+  if (!el) return;
+  const m = parseInt(el.querySelector('.edit-m').value)||0;
+  const s = parseInt(el.querySelector('.edit-s').value)||0;
+  const total = m*60+s;
+  if (total<=0) return;
+  blocks[idx].seconds = total;
+  editingIdx = -1;
+  firedAlarms = new Set(blocks.map((b,i) => (b.type==='alarm' && elapsed>=blockEnd(i)) ? i : -1).filter(x=>x>=0));
+  renderTimeline();
+}
+
+// ── Save config ──
+function openSave() {
+  if (!blocks.length) return;
+  closeConfigs();
+  document.getElementById('saveNameInput').value = '';
+  document.getElementById('saveOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('saveNameInput').focus(), 80);
+}
+function closeSave() { document.getElementById('saveOverlay').classList.remove('open'); }
+function closeSaveOutside(e) { if (e.target===document.getElementById('saveOverlay')) closeSave(); }
+function confirmSave() {
+  const L = t();
+  const name = document.getElementById('saveNameInput').value.trim();
+  if (!name || !blocks.length) return;
+  const configs = loadConfigs();
+  const total = blocks.reduce((s,b)=>s+b.seconds,0);
+  configs.push({
+    id: Date.now(), name,
+    blocks: JSON.parse(JSON.stringify(blocks)),
+    total,
+    alarms: blocks.filter(b=>b.type==='alarm').length,
+    savedAt: new Date().toLocaleDateString(lang === 'en' ? 'en-GB' : 'es-ES')
+  });
+  saveConfigs(configs);
+  closeSave();
+  showBanner(L.savedBanner(name));
+}
+
+// ── Configs panel ──
+function openConfigs() {
+  renderConfigsList();
+  document.getElementById('configsOverlay').classList.add('open');
+  document.getElementById('btnSaveCurrent').disabled = blocks.length === 0;
+}
+function closeConfigs() { document.getElementById('configsOverlay').classList.remove('open'); }
+function closeConfigsOutside(e) { if (e.target===document.getElementById('configsOverlay')) closeConfigs(); }
+
+function renderConfigsList() {
+  const L = t();
+  const configs = loadConfigs();
+  const el = document.getElementById('configsList');
+  if (!configs.length) { el.innerHTML = `<div class="configs-empty">${L.cfgEmpty}</div>`; return; }
+  el.innerHTML = configs.map((c,i) => {
+    const meta = L.cfgMeta(c.alarms, fmt(c.total), c.savedAt);
+    return `<div class="config-item">
+      <div class="config-item-info" onclick="loadConfig(${i})">
+        <div class="config-item-name">${escHtml(c.name)}</div>
+        <div class="config-item-meta">${meta}</div>
+      </div>
+      <div class="config-item-actions">
+        <button class="btn-load" onclick="loadConfig(${i})">${L.cfgLoad}</button>
+        <button class="btn-del-config" onclick="deleteConfig(${i})" title="${L.cfgDelete}">×</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function loadConfig(i) {
+  const L = t();
+  const configs = loadConfigs();
+  if (!configs[i]) return;
+  blocks = JSON.parse(JSON.stringify(configs[i].blocks));
+  firedAlarms = new Set();
+  editingIdx = -1;
+  closeConfigs();
+  resetTimer();
+  renderTimeline();
+  showBanner(L.loadedBanner(configs[i].name));
+}
+function deleteConfig(i) {
+  const configs = loadConfigs();
+  configs.splice(i,1);
+  saveConfigs(configs);
+  renderConfigsList();
+}
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Export / Import ──
+function exportConfigs() {
+  const L = t();
+  const configs = loadConfigs();
+  if (!configs.length) { showBanner(L.noExport); return; }
+  const data = JSON.stringify({ app: 'stopwatch', version: 1, configs }, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'stopwatch-configs.json'; a.click();
+  URL.revokeObjectURL(url);
+}
+function importConfigs(event) {
+  const L = t();
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.configs || !Array.isArray(data.configs)) throw new Error('invalid');
+      const current = loadConfigs();
+      const existingIds = new Set(current.map(c => c.id));
+      const toAdd = data.configs.filter(c => !existingIds.has(c.id));
+      saveConfigs([...current, ...toAdd]);
+      renderConfigsList();
+      showBanner(L.importedBanner(toAdd.length));
+    } catch(err) { showBanner(L.importError); }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
+// ── Render ──
+function renderTimeline() {
+  const L = t();
+  const tl = document.getElementById('timeline');
+  if (!blocks.length) { tl.innerHTML = `<div class="empty">${L.noBlocks}</div>`; document.getElementById('btnClearAll').disabled = true; return; }
+  let html = '', alarmCount = 0;
+  blocks.forEach((b,i) => {
+    const start = blockStart(i), end = blockEnd(i);
+    const isAlarm = b.type==='alarm';
+    const fired = isAlarm && firedAlarms.has(i);
+    const isActive = elapsed>=start && elapsed<end;
+    const isEd = editingIdx===i;
+    const pct = isActive && running ? Math.min(100,((elapsed-start)/b.seconds)*100) : 0;
+    if (isAlarm) alarmCount++;
+    const blockCls = `block block-${b.type}${fired?' fired':''}${isActive?' active-next':''}`;
+    const badgeCls = `block-badge badge-${b.type}`;
+    const badgeIcon = isAlarm ? (fired?'✓':'◎') : '⟳';
+    const typeLabel = isAlarm ? L.blockAlarm(alarmCount) : L.blockGap;
+    let sub = '';
+    if (isAlarm) sub = fired ? L.completed : (running&&isActive ? L.remaining(fmt(end-elapsed)) : L.at(fmt(end)));
+    else sub = running&&isActive ? L.remaining(fmt(end-elapsed)) : fmtDur(b.seconds);
+    const em = Math.floor(b.seconds/60), es = b.seconds%60;
+    if (i>0) html += `<div class="connector"></div>`;
+    html += `<div class="${blockCls}" data-idx="${i}">
+      <div class="block-view">
+        <div class="${badgeCls}">${badgeIcon}</div>
+        <div class="block-info">
+          <div class="block-type">${typeLabel}</div>
+          <div class="block-time">${isAlarm ? fmt(end) : fmtDur(b.seconds)}</div>
+          <div class="block-sub">${sub}</div>
+        </div>
+        <div class="block-actions">
+          <button class="btn-icon edit" onclick="toggleEdit(${i})">${isEd?'↑':'✎'}</button>
+          <button class="btn-icon del" onclick="removeBlock(${i})">×</button>
+        </div>
+      </div>
+      <div class="block-edit${isEd?' open':''}">
+        <span class="block-edit-label">${isAlarm ? L.newMark : L.newDuration}</span>
+        <div class="t-group">
+          <input class="edit-m" type="number" min="0" value="${em}" inputmode="numeric">
+          <span>${L.min}</span>
+          <input class="edit-s" type="number" min="0" max="59" value="${es}" inputmode="numeric">
+          <span>${L.sec}</span>
+        </div>
+        <button class="btn-save" onclick="saveEdit(${i})">${L.saveBtn}</button>
+        <button class="btn-cancel-edit" onclick="toggleEdit(${i})">${L.cancel}</button>
+      </div>
+      ${isActive?`<div class="progress-bar" style="width:${pct}%"></div>`:''}
+    </div>`;
+  });
+  const total = blocks.reduce((s,b)=>s+b.seconds,0);
+  html += `<div class="total-line">${L.totalDuration(fmt(total))}</div>`;
+  tl.innerHTML = html;
+  document.getElementById('btnClearAll').disabled = blocks.length === 0;
+}
+
+// ── Init ──
+(function init() {
+  try {
+    const last = localStorage.getItem('cronometro_last');
+    if (last) blocks = JSON.parse(last);
+  } catch(e) {}
+  applyLang();
+  const L = t();
+  document.getElementById('timerStatus').textContent = L.ready;
+  document.getElementById('btnStart').textContent = L.start;
+  renderTimeline();
+  window.addEventListener('beforeunload', () => {
+    try { localStorage.setItem('cronometro_last', JSON.stringify(blocks)); } catch(e) {}
+  });
+})();
+</script>
+</body>
+</html>
