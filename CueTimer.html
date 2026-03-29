@@ -155,6 +155,15 @@
   .btn-save-current:disabled { opacity: 0.35; cursor: default; }
   .btn-export, .btn-import { flex: 1; height: 40px; background: var(--surface2); border: 0.5px solid var(--border2); border-radius: var(--radius-sm); color: var(--muted); font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s, color 0.15s; }
   .btn-export:active, .btn-import:active { background: var(--surface); color: var(--text); }
+  .repeat-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .repeat-label { font-size: 11px; font-weight: 500; color: var(--dim); letter-spacing: 0.14em; text-transform: uppercase; flex: 1; }
+  .repeat-val { font-family: 'DM Mono', monospace; font-size: 14px; font-weight: 400; color: var(--text); min-width: 28px; text-align: center; }
+  .btn-repeat { width: 28px; height: 28px; border-radius: 8px; background: var(--surface); border: 0.5px solid var(--border2); color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .btn-repeat:active { background: var(--surface2); color: var(--text); }
+  .mode-selector { display: flex; gap: 3px; background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-sm); padding: 3px; margin-bottom: 16px; }
+  .mode-btn { flex: 1; height: 30px; border-radius: 7px; border: none; background: none; color: var(--dim); font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; cursor: pointer; letter-spacing: 0.02em; transition: background 0.15s, color 0.15s; }
+  .mode-btn.active { background: var(--surface2); color: var(--text); border: 0.5px solid var(--border2); }
+  .mode-btn:active { background: var(--surface2); }
 </style>
 </head>
 <body>
@@ -179,11 +188,23 @@
 
   <div class="alert-banner" id="alertBanner"></div>
 
+  <div class="mode-selector">
+    <button class="mode-btn" id="modeTabata" onclick="setMode('tabata')">Tabata / Pomodoro</button>
+    <button class="mode-btn" id="modeYoga" onclick="setMode('yoga')">Yoga</button>
+  </div>
+
   <div class="section-label" id="h-sequence"></div>
   <div class="add-bar">
     <button class="add-btn alarm" id="btnAddAlarm" onclick="openModal('alarm')"></button>
     <button class="add-btn gap" id="btnAddGap" onclick="openModal('gap')"></button>
     <button class="add-btn clear" id="btnClearAll" onclick="clearAll()"></button>
+  </div>
+
+  <div class="repeat-bar" id="repeatBar">
+    <span class="repeat-label" id="h-repeat">repeat</span>
+    <button class="btn-repeat" onclick="adjustRepeats(-1)">−</button>
+    <span class="repeat-val" id="repeatsVal">×1</span>
+    <button class="btn-repeat" onclick="adjustRepeats(1)">+</button>
   </div>
 
   <div class="timeline" id="timeline"></div>
@@ -283,6 +304,8 @@ const LANGS = {
     importError: 'Import error: invalid file',
     alarmBanner: (n, t) => 'Alarm ' + n + ' · ' + t,
     clearAll: 'Clear all', clearConfirm: 'Clear all blocks?',
+    repeat: 'repeat',
+    round: (r, n) => 'round ' + r + ' / ' + n,
   },
   es: {
     title: 'cronómetro',
@@ -323,6 +346,8 @@ const LANGS = {
     importError: 'Error al importar: archivo no válido',
     alarmBanner: (n, t) => 'Alarma ' + n + ' · ' + t,
     clearAll: 'Borrar todo', clearConfirm: '¿Borrar todos los bloques?',
+    repeat: 'repetir',
+    round: (r, n) => 'vuelta ' + r + ' / ' + n,
   }
 };
 
@@ -379,6 +404,7 @@ function applyLang() {
   document.getElementById('s-save').textContent = L.saveBtn;
   document.getElementById('s-cancel').textContent = L.cancel;
   document.getElementById('m-cancel').textContent = L.cancel;
+  document.getElementById('h-repeat').textContent = L.repeat;
 }
 
 // ── Persistence ──
@@ -414,9 +440,23 @@ function playChime() {
   } catch(e) {}
 }
 
+// ── Wake Lock ──
+let wakeLock = null;
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
+}
+function releaseWakeLock() {
+  if (wakeLock) { wakeLock.release(); wakeLock = null; }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && running) requestWakeLock();
+});
+
 // ── Helpers ──
-let blocks = [], elapsed = 0, running = false;
-let rafId = null, firedAlarms = new Set();
+let blocks = [], elapsed = 0, running = false, repeats = 1;
+let mode = localStorage.getItem('stopwatch_mode') || 'tabata';
+let rafId = null, firedAlarms = new Set(), firedAlarmStarts = new Set();
 let startTime = null, baseElapsed = 0, msElapsed = 0;
 let editingIdx = -1, modalType = 'alarm';
 
@@ -436,39 +476,84 @@ function blockEnd(i) { return blockStart(i) + blocks[i].seconds; }
 function startStop() {
   const L = t();
   if (running) {
-    running = false; cancelAnimationFrame(rafId); rafId = null;
+    running = false; clearInterval(rafId); rafId = null;
     baseElapsed = msElapsed; startTime = null;
+    releaseWakeLock();
     document.getElementById('btnStart').textContent = L.resume;
     document.getElementById('timerStatus').textContent = L.paused;
     document.getElementById('timerDisplay').classList.remove('running');
     document.getElementById('headerDot').classList.remove('running');
   } else {
     running = true; startTime = performance.now();
+    requestWakeLock();
     document.getElementById('btnStart').textContent = L.pause;
     document.getElementById('timerStatus').textContent = L.running;
     document.getElementById('timerDisplay').classList.add('running');
     document.getElementById('headerDot').classList.add('running');
-    tick();
+    rafId = setInterval(tick, 100);
   }
 }
 function tick() {
-  if (!running) return;
+  if (!running || startTime === null) return;
   msElapsed = baseElapsed + (performance.now() - startTime);
   const secs = Math.floor(msElapsed/1000), ms = Math.floor((msElapsed%1000)/10);
   document.getElementById('timerDisplay').textContent = fmt(secs);
   document.getElementById('timerMs').textContent = '.' + String(ms).padStart(2,'0');
   if (secs !== elapsed) { elapsed = secs; checkAlarms(); }
-  rafId = requestAnimationFrame(tick);
+  if (running && repeats > 1 && blocks.length) {
+    const total = blocks.reduce((s,b)=>s+b.seconds, 0);
+    if (total > 0 && elapsed < total * repeats) {
+      const r = Math.min(repeats, Math.floor(elapsed / total) + 1);
+      document.getElementById('timerStatus').textContent = t().round(r, repeats);
+    }
+  }
+}
+function setMode(m) {
+  mode = m;
+  document.getElementById('modeTabata').classList.toggle('active', m === 'tabata');
+  document.getElementById('modeYoga').classList.toggle('active', m === 'yoga');
+  localStorage.setItem('stopwatch_mode', m);
+  renderTimeline();
+}
+function adjustRepeats(delta) {
+  repeats = Math.max(1, Math.min(20, repeats + delta));
+  document.getElementById('repeatsVal').textContent = '×' + repeats;
+  renderTimeline();
+}
+function recalcFired() {
+  const total = blocks.reduce((s,b)=>s+b.seconds, 0);
+  firedAlarms = new Set(); firedAlarmStarts = new Set();
+  if (!total) return;
+  for (let r = 0; r < repeats; r++) {
+    const offset = r * total;
+    blocks.forEach((b,i) => {
+      if (b.type !== 'alarm') return;
+      if (elapsed > offset + blockStart(i)) firedAlarmStarts.add(`${r}-${i}`);
+      if (elapsed >= offset + blockEnd(i)) firedAlarms.add(`${r}-${i}`);
+    });
+  }
 }
 function checkAlarms() {
   const L = t();
-  blocks.forEach((b,i) => {
-    if (b.type==='alarm' && !firedAlarms.has(i) && elapsed >= blockEnd(i)) {
-      firedAlarms.add(i); playChime();
-      const n = blocks.slice(0,i).filter(x=>x.type==='alarm').length + 1;
-      showBanner(L.alarmBanner(n, fmt(blockEnd(i))));
-    }
-  });
+  const total = blocks.reduce((s,b)=>s+b.seconds, 0);
+  if (!total) { renderTimeline(); return; }
+  for (let r = 0; r < repeats; r++) {
+    const offset = r * total;
+    blocks.forEach((b,i) => {
+      if (b.type !== 'alarm') return;
+      const key = `${r}-${i}`;
+      const start = offset + blockStart(i);
+      const end = offset + blockEnd(i);
+      if (mode === 'tabata' && !firedAlarmStarts.has(key) && elapsed >= start) {
+        firedAlarmStarts.add(key); playChime();
+      }
+      if (!firedAlarms.has(key) && elapsed >= end) {
+        firedAlarms.add(key); playChime();
+        const n = blocks.slice(0,i).filter(x=>x.type==='alarm').length + 1;
+        showBanner(L.alarmBanner(n, fmt(end)));
+      }
+    });
+  }
   renderTimeline();
 }
 function updateProgress() {
@@ -490,9 +575,9 @@ function showBanner(msg) {
 }
 function resetTimer() {
   const L = t();
-  running = false; if (rafId) cancelAnimationFrame(rafId); rafId = null;
+  running = false; if (rafId) clearInterval(rafId); rafId = null;
   elapsed = 0; msElapsed = 0; baseElapsed = 0; startTime = null;
-  firedAlarms = new Set(); editingIdx = -1;
+  firedAlarms = new Set(); firedAlarmStarts = new Set(); editingIdx = -1;
   document.getElementById('timerDisplay').textContent = '00:00:00';
   document.getElementById('timerDisplay').classList.remove('running');
   document.getElementById('timerMs').textContent = '.00';
@@ -536,7 +621,7 @@ function confirmModal() {
   const total = m*60+s;
   if (total<=0) return;
   blocks.push({ type: modalType, seconds: total });
-  firedAlarms = new Set(blocks.map((b,i) => (b.type==='alarm' && elapsed>=blockEnd(i)) ? i : -1).filter(x=>x>=0));
+  recalcFired();
   closeModal();
   renderTimeline();
 }
@@ -545,7 +630,7 @@ function confirmModal() {
 function clearAll() {
   if (!blocks.length) return;
   if (!confirm(t().clearConfirm)) return;
-  blocks = []; firedAlarms = new Set(); editingIdx = -1;
+  blocks = []; firedAlarms = new Set(); firedAlarmStarts = new Set(); editingIdx = -1;
   resetTimer();
 }
 
@@ -554,7 +639,7 @@ function removeBlock(idx) {
   blocks.splice(idx,1);
   if (editingIdx===idx) editingIdx=-1;
   else if (editingIdx>idx) editingIdx--;
-  firedAlarms = new Set(blocks.map((b,i) => (b.type==='alarm' && elapsed>=blockEnd(i)) ? i : -1).filter(x=>x>=0));
+  recalcFired();
   renderTimeline();
 }
 function toggleEdit(idx) {
@@ -574,7 +659,7 @@ function saveEdit(idx) {
   if (total<=0) return;
   blocks[idx].seconds = total;
   editingIdx = -1;
-  firedAlarms = new Set(blocks.map((b,i) => (b.type==='alarm' && elapsed>=blockEnd(i)) ? i : -1).filter(x=>x>=0));
+  recalcFired();
   renderTimeline();
 }
 
@@ -597,6 +682,7 @@ function confirmSave() {
   configs.push({
     id: Date.now(), name,
     blocks: JSON.parse(JSON.stringify(blocks)),
+    repeats, mode,
     total,
     alarms: blocks.filter(b=>b.type==='alarm').length,
     savedAt: new Date().toLocaleDateString(lang === 'en' ? 'en-GB' : 'es-ES')
@@ -640,7 +726,10 @@ function loadConfig(i) {
   const configs = loadConfigs();
   if (!configs[i]) return;
   blocks = JSON.parse(JSON.stringify(configs[i].blocks));
-  firedAlarms = new Set();
+  repeats = configs[i].repeats || 1;
+  document.getElementById('repeatsVal').textContent = '×' + repeats;
+  setMode(configs[i].mode === 'yoga' ? 'yoga' : 'tabata');
+  firedAlarms = new Set(); firedAlarmStarts = new Set();
   editingIdx = -1;
   closeConfigs();
   resetTimer();
@@ -695,15 +784,19 @@ function renderTimeline() {
   const L = t();
   const tl = document.getElementById('timeline');
   if (!blocks.length) { tl.innerHTML = `<div class="empty">${L.noBlocks}</div>`; document.getElementById('btnClearAll').disabled = true; return; }
+  const total = blocks.reduce((s,b)=>s+b.seconds, 0);
+  const currentRound = (total > 0 && elapsed > 0) ? Math.min(repeats - 1, Math.floor(elapsed / total)) : 0;
+  const roundOffset = currentRound * total;
   let html = '', alarmCount = 0;
   blocks.forEach((b,i) => {
     const start = blockStart(i), end = blockEnd(i);
+    const absStart = roundOffset + start, absEnd = roundOffset + end;
     const isAlarm = b.type==='alarm';
-    const fired = isAlarm ? firedAlarms.has(i) : (running || elapsed > 0) && elapsed >= end;
-    // Alarms are active for 1s when they fire; intervals are active while running through them
-    const isActive = !fired && elapsed >= start && elapsed < end;
+    const key = `${currentRound}-${i}`;
+    const fired = isAlarm ? firedAlarms.has(key) : (running || elapsed > 0) && elapsed >= absEnd;
+    const isActive = !fired && elapsed >= absStart && elapsed < absEnd;
     const isEd = editingIdx===i;
-    const pct = (!isAlarm && isActive && running) ? Math.min(100,((elapsed-start)/b.seconds)*100) : 0;
+    const pct = (!isAlarm && isActive && running) ? Math.min(100,((elapsed-absStart)/b.seconds)*100) : 0;
     if (isAlarm) alarmCount++;
     const blockCls = `block block-${b.type}${fired?' fired':''}${isActive?' active-next':''}`;
     const badgeCls = `block-badge badge-${b.type}`;
@@ -714,8 +807,8 @@ function renderTimeline() {
     const cumulMark = fmt(end);
     let mainTime = isAlarm ? `${ownTime} <span style="font-size:11px;opacity:0.45;font-weight:300">→ ${cumulMark}</span>` : fmtDur(b.seconds);
     let sub = '';
-    if (isAlarm) sub = fired ? L.completed : (running&&isActive ? L.remaining(fmt(end-elapsed)) : L.at(cumulMark));
-    else sub = fired ? L.completed : (running&&isActive ? L.remaining(fmt(end-elapsed)) : `${L.at(cumulMark)}`);
+    if (isAlarm) sub = fired ? L.completed : (running&&isActive ? L.remaining(fmt(absEnd-elapsed)) : L.at(cumulMark));
+    else sub = fired ? L.completed : (running&&isActive ? L.remaining(fmt(absEnd-elapsed)) : `${L.at(cumulMark)}`);
     const em = Math.floor(b.seconds/60), es = b.seconds%60;
     if (i>0) html += `<div class="connector"></div>`;
     html += `<div class="${blockCls}" data-idx="${i}">
@@ -745,8 +838,9 @@ function renderTimeline() {
       ${(!isAlarm && isActive) ? `<div class="progress-bar" style="width:${pct}%"></div>` : ''}
     </div>`;
   });
-  const total = blocks.reduce((s,b)=>s+b.seconds,0);
-  html += `<div class="total-line">${L.totalDuration(fmt(total))}</div>`;
+  const totalSecs = total * repeats;
+  const repeatBadge = repeats > 1 ? ` <span style="font-size:11px;color:var(--accent);font-family:'DM Mono',monospace;letter-spacing:0.06em">×${repeats}</span>` : '';
+  html += `<div class="total-line">${L.totalDuration(fmt(totalSecs))}${repeatBadge}</div>`;
   tl.innerHTML = html;
   document.getElementById('btnClearAll').disabled = blocks.length === 0;
 }
@@ -761,7 +855,7 @@ function renderTimeline() {
   const L = t();
   document.getElementById('timerStatus').textContent = L.ready;
   document.getElementById('btnStart').textContent = L.start;
-  renderTimeline();
+  setMode(mode);
   window.addEventListener('beforeunload', () => {
     try { localStorage.setItem('cronometro_last', JSON.stringify(blocks)); } catch(e) {}
   });
